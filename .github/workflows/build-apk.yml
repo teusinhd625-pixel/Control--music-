@@ -22,16 +22,28 @@ jobs:
 
       - name: Criar projeto Capacitor
         run: |
-          mkdir -p www resources
+          mkdir -p www
           cp ./*.html www/index.html
-          cp icon-only.png resources/icon-only.png
           npm init -y
           npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
-          npm install --save-dev @capacitor/assets
           npx cap init "Control Music" com.teusinhd625.controlmusic --web-dir=www
           npx cap add android
-          npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000'
           npx cap sync android
+
+      - name: Aplicar ícone do app
+        run: |
+          test -f icon-only.png || (echo "icon-only.png nao encontrado na raiz" && exit 1)
+          CONVERT=$(command -v magick || command -v convert)
+          RES=android/app/src/main/res
+          rm -rf $RES/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            name=${d%%:*}; size=${d##*:}
+            mkdir -p $RES/mipmap-$name
+            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher.png
+            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_round.png
+            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_foreground.png
+          done
+          ls -R $RES | grep -i launcher
 
       - name: Compilar APK
         run: |
