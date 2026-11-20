@@ -22,13 +22,15 @@ jobs:
 
       - name: Criar projeto Capacitor
         run: |
-          mkdir -p www
+          mkdir -p www resources
           cp ./*.html www/index.html
-          [ -f icon-only.png ] && cp icon-only.png www/icon.png || true
+          cp icon-only.png resources/icon-only.png
           npm init -y
           npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npm install --save-dev @capacitor/assets
           npx cap init "Control Music" com.teusinhd625.controlmusic --web-dir=www
           npx cap add android
+          npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000'
           npx cap sync android
 
       - name: Compilar APK
