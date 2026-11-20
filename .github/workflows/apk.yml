@@ -1,11 +1,9 @@
 name: Build APK
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -22,255 +20,25 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Preparar projeto
+      - name: Criar projeto Capacitor
         run: |
-          mkdir www
-          cp vers*3.2.html www/index.html
-          cp icon-only.png www/icon-512.png
+          mkdir -p www
+          cp ./*.html www/index.html
+          [ -f icon-only.png ] && cp icon-only.png www/icon.png || true
           npm init -y
-          npm i @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
-          cat > capacitor.config.json <<'EOF'
-          {"appId":"com.controlmusic.app","appName":"Control Music","webDir":"www","backgroundColor":"#000000","android":{"allowMixedContent":true}}
-          EOF
+          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npx cap init "Control Music" com.teusinhd625.controlmusic --web-dir=www
           npx cap add android
-          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/' android/variables.gradle
+          npx cap sync android
 
-      - name: Codigo nativo
+      - name: Compilar APK
         run: |
-          D=android/app/src/main/java/com/controlmusic/app
-          cat > $D/MainActivity.java <<'EOF'
-          package com.controlmusic.app;
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-          import android.Manifest;
-          import android.content.Intent;
-          import android.content.pm.ActivityInfo;
-          import android.content.pm.PackageManager;
-          import android.database.Cursor;
-          import android.graphics.Color;
-          import android.net.Uri;
-          import android.os.Build;
-          import android.os.Bundle;
-          import android.provider.OpenableColumns;
-          import android.view.View;
-          import android.webkit.JavascriptInterface;
-          import android.webkit.WebView;
-          import com.getcapacitor.BridgeActivity;
-          import org.json.JSONArray;
-          import org.json.JSONObject;
-          import java.io.File;
-          import java.io.FileOutputStream;
-          import java.io.InputStream;
-          import java.util.ArrayList;
-          import java.util.List;
-
-          public class MainActivity extends BridgeActivity {
-            private final List<JSONObject> pending = new ArrayList<>();
-
-            @Override
-            public void onCreate(Bundle b) {
-              super.onCreate(b);
-              if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
-              }
-              try {
-                getWindow().setStatusBarColor(Color.BLACK);
-                getWindow().setNavigationBarColor(Color.BLACK);
-                WebView wv = getBridge().getWebView();
-                wv.setBackgroundColor(Color.BLACK);
-                wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
-                wv.addJavascriptInterface(new Api(), "AndroidShare");
-              } catch (Exception e) {}
-              handle(getIntent());
-            }
-
-            @Override
-            public void onNewIntent(Intent i) {
-              super.onNewIntent(i);
-              setIntent(i);
-              handle(i);
-            }
-
-            @Override
-            public void onPause() {
-              super.onPause();
-              try {
-                WebView w = getBridge().getWebView();
-                w.onResume();
-                w.resumeTimers();
-              } catch (Exception e) {}
-            }
-
-            @Override
-            public void onDestroy() {
-              if (isFinishing()) stopService(new Intent(this, MusicService.class));
-              super.onDestroy();
-            }
-
-            private void handle(Intent in) {
-              if (in == null) return;
-              String a = in.getAction();
-              final List<Uri> uris = new ArrayList<>();
-              if (Intent.ACTION_SEND.equals(a)) {
-                Uri u = in.getParcelableExtra(Intent.EXTRA_STREAM);
-                if (u != null) uris.add(u);
-              } else if (Intent.ACTION_SEND_MULTIPLE.equals(a)) {
-                ArrayList<Uri> l = in.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-                if (l != null) uris.addAll(l);
-              } else if (Intent.ACTION_VIEW.equals(a) && in.getData() != null) {
-                uris.add(in.getData());
-              }
-              if (uris.isEmpty()) return;
-              new Thread(new Runnable() { public void run() { copyAll(uris); } }).start();
-            }
-
-            private String ext(String m) {
-              if (m == null) return ".mp3";
-              if (m.equals("audio/mpeg")) return ".mp3";
-              if (m.equals("audio/mp4") || m.equals("audio/x-m4a") || m.equals("audio/aac")) return ".m4a";
-              if (m.equals("audio/ogg")) return ".ogg";
-              if (m.equals("audio/wav") || m.equals("audio/x-wav")) return ".wav";
-              if (m.equals("audio/flac")) return ".flac";
-              if (m.equals("video/mp4")) return ".mp4";
-              if (m.equals("video/webm")) return ".webm";
-              if (m.equals("video/x-matroska")) return ".mkv";
-              if (m.equals("video/quicktime")) return ".mov";
-              if (m.equals("video/3gpp")) return ".3gp";
-              return m.startsWith("audio") ? ".mp3" : ".mp4";
-            }
-
-            private void copyAll(List<Uri> uris) {
-              for (Uri u : uris) {
-                try {
-                  String mime = getContentResolver().getType(u);
-                  String name = null;
-                  Cursor c = null;
-                  try {
-                    c = getContentResolver().query(u, null, null, null, null);
-                    if (c != null && c.moveToFirst()) {
-                      int i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                      if (i >= 0) name = c.getString(i);
-                    }
-                  } catch (Exception e) {
-                  } finally {
-                    if (c != null) c.close();
-                  }
-                  if (name == null || name.isEmpty()) {
-                    name = u.getLastPathSegment();
-                    if (name == null) name = "midia";
-                  }
-                  name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-                  if (!name.toLowerCase().matches(".*\\.(mp3|mp4|m4a|wav|ogg|opus|aac|flac|webm|mkv|mov|3gp)$")) name += ext(mime);
-                  File dir = new File(getFilesDir(), "shared/" + System.nanoTime());
-                  dir.mkdirs();
-                  File out = new File(dir, name);
-                  InputStream in = getContentResolver().openInputStream(u);
-                  FileOutputStream os = new FileOutputStream(out);
-                  byte[] buf = new byte[65536];
-                  int n;
-                  while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
-                  os.close();
-                  in.close();
-                  JSONObject o = new JSONObject();
-                  o.put("name", name);
-                  o.put("path", out.getAbsolutePath());
-                  o.put("noplay", false);
-                  synchronized (pending) { pending.add(o); }
-                } catch (Exception e) {}
-              }
-              runOnUiThread(new Runnable() {
-                public void run() {
-                  try {
-                    getBridge().getWebView().evaluateJavascript("window.__takeShared&&window.__takeShared()", null);
-                  } catch (Exception e) {}
-                }
-              });
-            }
-
-            class Api {
-              @JavascriptInterface
-              public String take() {
-                synchronized (pending) {
-                  JSONArray a = new JSONArray();
-                  for (JSONObject o : pending) a.put(o);
-                  pending.clear();
-                  return a.toString();
-                }
-              }
-
-              @JavascriptInterface
-              public void playing(boolean on, String title) {
-                try {
-                  Intent s = new Intent(MainActivity.this, MusicService.class);
-                  s.putExtra("on", on);
-                  s.putExtra("title", title);
-                  if (MusicService.running) startService(s);
-                  else if (on) {
-                    if (Build.VERSION.SDK_INT >= 26) startForegroundService(s);
-                    else startService(s);
-                  }
-                } catch (Exception e) {}
-              }
-
-              @JavascriptInterface
-              public void fullscreen(final boolean on) {
-                runOnUiThread(new Runnable() {
-                  public void run() {
-                    setRequestedOrientation(on ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-                    int f = View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
-                    getWindow().getDecorView().setSystemUiVisibility(on ? f : 0);
-                  }
-                });
-              }
-            }
-          }
-          EOF
-          cat > $D/MusicService.java <<'EOF'
-          package com.controlmusic.app;
-
-          import android.app.Notification;
-          import android.app.NotificationChannel;
-          import android.app.NotificationManager;
-          import android.app.PendingIntent;
-          import android.app.Service;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.content.pm.ServiceInfo;
-          import android.os.Build;
-          import android.os.IBinder;
-          import android.os.PowerManager;
-
-          public class MusicService extends Service {
-            static boolean running = false;
-            private PowerManager.WakeLock wl;
-
-            @Override
-            public IBinder onBind(Intent i) { return null; }
-
-            @Override
-            public void onCreate() {
-              super.onCreate();
-              try {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "controlmusic:play");
-                wl.acquire();
-              } catch (Exception e) {}
-            }
-
-            @Override
-            public int onStartCommand(Intent i, int f, int id) {
-              String title = i != null ? i.getStringExtra("title") : null;
-              boolean on = i == null || i.getBooleanExtra("on", true);
-              if (title == null || title.isEmpty() || title.equals("-")) title = "Control Music";
-              NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-              if (Build.VERSION.SDK_INT >= 26) {
-                nm.createNotificationChannel(new NotificationChannel("play", "Reproducao", NotificationManager.IMPORTANCE_LOW));
-              }
-              Intent open = new Intent(this, MainActivity.class);
-              open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-              PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-              Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, "play") : new Notification.Builder(this);
-              b.setContentTitle(title).setContentText(on ? "Tocando" : "Pausado")
-                  .setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(pi).setOngoing(true);
-              if (Build.VERSION.SDK_INT >= 29) startForeground(1, b.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Control-Music-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
