@@ -32,18 +32,23 @@ jobs:
 
       - name: Aplicar ícone do app
         run: |
-          test -f icon-only.png || (echo "icon-only.png nao encontrado na raiz" && exit 1)
+          ICON=$(ls ./*.png 2>/dev/null | head -n 1)
+          if [ -z "$ICON" ]; then
+            echo "Nenhum arquivo .png encontrado na raiz do repositorio"
+            ls -la
+            exit 1
+          fi
+          echo "Usando icone: $ICON"
           CONVERT=$(command -v magick || command -v convert)
           RES=android/app/src/main/res
           rm -rf $RES/mipmap-anydpi-v26
           for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             name=${d%%:*}; size=${d##*:}
             mkdir -p $RES/mipmap-$name
-            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher.png
-            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_round.png
-            $CONVERT icon-only.png -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_foreground.png
+            $CONVERT "$ICON" -resize ${size}x${size} $RES/mipmap-$name/ic_launcher.png
+            $CONVERT "$ICON" -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_round.png
+            $CONVERT "$ICON" -resize ${size}x${size} $RES/mipmap-$name/ic_launcher_foreground.png
           done
-          ls -R $RES | grep -i launcher
 
       - name: Compilar APK
         run: |
